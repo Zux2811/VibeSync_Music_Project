@@ -1,0 +1,65 @@
+════════════════════════════════════════════════════════════════
+  🔐 QUICK FIX: Lỗi "Bạn không phải admin"
+════════════════════════════════════════════════════════════════
+
+❌ VẤN ĐỀ:
+   POST /api/admin/login → 403 "Bạn không phải admin"
+
+✅ GIẢI PHÁP (3 BƯỚC):
+
+1️⃣  TẠO ADMIN ACCOUNT
+    $ cd music-app-backend
+    $ node src/utils/createAdmin.js
+    
+    Output: ✅ Admin created successfully!
+
+2️⃣  KIỂM TRA DATABASE
+    mysql> SELECT * FROM users WHERE email='admin@gmail.com';
+    
+    Kết quả phải có: role = 'admin'
+
+3️⃣  TEST API LẠI
+    POST http://localhost:5000/api/admin/login
+    {
+      "email": "admin@gmail.com",
+      "password": "123456"
+    }
+    
+    Response: 200 OK + JWT token ✅
+
+════════════════════════════════════════════════════════════════
+
+📝 CÁC THAY ĐỔI TRONG CODE:
+
+File: src/controllers/admin.controller.js
+
+❌ TRƯỚC:
+   const admin = await User.findOne({ email });
+   const token = jwt.sign({ id: admin._id, ... });
+
+✅ SAU:
+   const admin = await User.findOne({ where: { email } });
+   const token = jwt.sign({ id: admin.id, ... });
+
+════════════════════════════════════════════════════════════════
+
+🎯 NGUYÊN NHÂN:
+
+1. Admin account không tồn tại trong database
+2. Hoặc role ≠ 'admin' (mặc định là 'user')
+3. Code sử dụng MongoDB syntax thay vì Sequelize
+
+════════════════════════════════════════════════════════════════
+
+💡 MẸO:
+
+• Nếu admin đã tồn tại: xóa rồi chạy lại script
+  DELETE FROM users WHERE email='admin@gmail.com';
+
+• Mật khẩu mặc định: 123456
+  Hãy đổi sau khi đăng nhập lần đầu!
+
+• Kiểm tra .env có đúng DB credentials không
+
+════════════════════════════════════════════════════════════════
+
