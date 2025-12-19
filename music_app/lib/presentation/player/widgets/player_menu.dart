@@ -4,12 +4,18 @@ import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:music_app/presentation/subscription/upgrade_pro_page.dart';
 
+// Skyblue color scheme
+const Color kSkyBlue = Color(0xFF0EA5E9);
+
 class PlayerMenu extends StatelessWidget {
   final VoidCallback onAddToPlaylist;
   final VoidCallback onViewArtist;
   final VoidCallback onDownload;
   final VoidCallback onShare;
+  final VoidCallback onToggleAutoMix;
   final bool canDownload;
+  final bool isAutoMixEnabled;
+  final int crossfadeDuration;
 
   const PlayerMenu({
     Key? key,
@@ -17,19 +23,22 @@ class PlayerMenu extends StatelessWidget {
     required this.onViewArtist,
     required this.onDownload,
     required this.onShare,
+    required this.onToggleAutoMix,
     required this.canDownload,
+    this.isAutoMixEnabled = false,
+    this.crossfadeDuration = 8,
   }) : super(key: key);
 
   @override
   Widget build(BuildContext context) {
-    final theme = Theme.of(context);
-    final iconColor =
-        theme.appBarTheme.foregroundColor ?? theme.iconTheme.color;
-    final highlight = theme.colorScheme.primary;
+    const highlight = kSkyBlue;
 
     return PopupMenuButton<String>(
-      icon: FaIcon(FontAwesomeIcons.ellipsisVertical, color: iconColor),
-      color: theme.colorScheme.surface,
+      icon: const FaIcon(
+        FontAwesomeIcons.ellipsisVertical,
+        color: Colors.white70,
+      ),
+      color: const Color(0xFF1E1E2E),
       elevation: 8,
       onSelected: (value) async {
         switch (value) {
@@ -38,6 +47,9 @@ class PlayerMenu extends StatelessWidget {
             break;
           case 'artist':
             onViewArtist();
+            break;
+          case 'automix':
+            onToggleAutoMix();
             break;
           case 'download':
             if (canDownload) {
@@ -80,18 +92,66 @@ class PlayerMenu extends StatelessWidget {
         }
       },
       itemBuilder: (BuildContext context) {
+        const textColor = Colors.white;
+        final subtextColor = Colors.white.withOpacity(0.6);
+
         final items = <PopupMenuEntry<String>>[
+          PopupMenuItem<String>(
+            value: 'automix',
+            child: Row(
+              children: [
+                FaIcon(
+                  FontAwesomeIcons.shuffle,
+                  color: isAutoMixEnabled ? highlight : subtextColor,
+                  size: 18,
+                ),
+                const SizedBox(width: 12),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Text(
+                        'AutoMix',
+                        style: TextStyle(
+                          color: textColor,
+                          fontWeight:
+                              isAutoMixEnabled
+                                  ? FontWeight.bold
+                                  : FontWeight.normal,
+                        ),
+                      ),
+                      Text(
+                        isAutoMixEnabled
+                            ? 'Bật • Crossfade ${crossfadeDuration}s'
+                            : 'Chuyển bài mượt mà',
+                        style: TextStyle(
+                          color: isAutoMixEnabled ? highlight : subtextColor,
+                          fontSize: 11,
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isAutoMixEnabled)
+                  const Icon(Icons.check_circle, color: highlight, size: 18),
+              ],
+            ),
+          ),
+          const PopupMenuDivider(),
           PopupMenuItem<String>(
             value: 'playlist',
             child: Row(
               children: [
-                FaIcon(FontAwesomeIcons.listUl, color: highlight, size: 18),
+                const FaIcon(
+                  FontAwesomeIcons.listUl,
+                  color: highlight,
+                  size: 18,
+                ),
                 const SizedBox(width: 12),
-                Text(
+                const Text(
                   'Add to Playlist',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
+                  style: TextStyle(color: textColor),
                 ),
               ],
             ),
@@ -100,14 +160,9 @@ class PlayerMenu extends StatelessWidget {
             value: 'artist',
             child: Row(
               children: [
-                FaIcon(FontAwesomeIcons.user, color: highlight, size: 18),
+                const FaIcon(FontAwesomeIcons.user, color: highlight, size: 18),
                 const SizedBox(width: 12),
-                Text(
-                  'View Artist',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
-                ),
+                const Text('View Artist', style: TextStyle(color: textColor)),
               ],
             ),
           ),
@@ -115,14 +170,13 @@ class PlayerMenu extends StatelessWidget {
             value: 'download',
             child: Row(
               children: [
-                FaIcon(FontAwesomeIcons.download, color: highlight, size: 18),
-                const SizedBox(width: 12),
-                Text(
-                  'Download',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
+                const FaIcon(
+                  FontAwesomeIcons.download,
+                  color: highlight,
+                  size: 18,
                 ),
+                const SizedBox(width: 12),
+                const Text('Download', style: TextStyle(color: textColor)),
               ],
             ),
           ),
@@ -130,14 +184,13 @@ class PlayerMenu extends StatelessWidget {
             value: 'share',
             child: Row(
               children: [
-                FaIcon(FontAwesomeIcons.share, color: highlight, size: 18),
-                const SizedBox(width: 12),
-                Text(
-                  'Share',
-                  style: theme.textTheme.bodyMedium?.copyWith(
-                    color: theme.colorScheme.onSurface,
-                  ),
+                const FaIcon(
+                  FontAwesomeIcons.share,
+                  color: highlight,
+                  size: 18,
                 ),
+                const SizedBox(width: 12),
+                const Text('Share', style: TextStyle(color: textColor)),
               ],
             ),
           ),

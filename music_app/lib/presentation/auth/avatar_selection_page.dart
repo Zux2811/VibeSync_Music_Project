@@ -1,11 +1,15 @@
-import 'dart:io';
-
+import 'dart:typed_data';
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
-import 'package:image_cropper/image_cropper.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+// http import not needed - using ApiService
+import '../../data/sources/api_service.dart';
 
-enum AvatarChoice { none, custom, googleDefault }
+// Conditional import for mobile-only features
+import 'avatar_cropper_stub.dart'
+    if (dart.library.io) 'avatar_cropper_mobile.dart'
+    as cropper;
 
 class AvatarSelectionPage extends StatefulWidget {
   final bool isGoogleSignIn;
@@ -17,98 +21,123 @@ class AvatarSelectionPage extends StatefulWidget {
 }
 
 class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
-  String? _selectedAvatar; // path of chosen avatar to persist on Next
-  File? _croppedImageFile; // custom-picked image file
-  File? _googleDefaultFile; // downloaded Google avatar file
-
-  AvatarChoice _choice = AvatarChoice.none;
+  Uint8List? _imageBytes; // Image bytes (works on both web and mobile)
+  String? _imageUrl; // URL for network image (Google avatar)
+  bool _isUploading = false;
 
   @override
   void initState() {
     super.initState();
-    _restorePreviousAvatarIfAny();
+    if (widget.isGoogleSignIn) {
+      _loadGoogleAvatar();
+    }
   }
 
-  Future<void> _restorePreviousAvatarIfAny() async {
+  Future<void> _loadGoogleAvatar() async {
     final prefs = await SharedPreferences.getInstance();
-    final onboardingComplete = prefs.getBool('onboarding_complete') ?? false;
-    if (onboardingComplete) return; // Do not interfere outside onboarding
-
-    final savedPath = prefs.getString('user_avatar');
-    if (savedPath == null || savedPath.isEmpty) return;
-
-    final file = File(savedPath);
-    final exists = await file.exists();
-    if (!mounted) return;
-    if (exists) {
+    final googleAvatarUrl = prefs.getString('google_avatar_url');
+    if (googleAvatarUrl != null && googleAvatarUrl.isNotEmpty) {
       setState(() {
-        _selectedAvatar = savedPath;
-        if (widget.isGoogleSignIn) {
-          // Treat saved path as Google default avatar
-          _googleDefaultFile = file;
-          _choice = AvatarChoice.googleDefault;
-        } else {
-          _croppedImageFile = file;
-          _choice = AvatarChoice.custom;
-        }
+        _imageUrl = googleAvatarUrl;
       });
     }
   }
 
-  Future<void> _pickAndCropImage() async {
-    final ImagePicker picker = ImagePicker();
-    final XFile? pickedFile = await picker.pickImage(
-      source: ImageSource.gallery,
-    );
-
-    if (pickedFile != null) {
-      final CroppedFile? croppedFile = await ImageCropper().cropImage(
-        sourcePath: pickedFile.path,
-        uiSettings: [
-          AndroidUiSettings(
-            toolbarTitle: 'Bạn có thể di chuyển hoặc zoom ảnh',
-            toolbarColor: Colors.black,
-            toolbarWidgetColor: Colors.white,
-            initAspectRatio: CropAspectRatioPreset.square,
-            lockAspectRatio: true,
-            hideBottomControls: false,
-            cropStyle: CropStyle.circle,
-          ),
-          IOSUiSettings(
-            title: 'Bạn có thể di chuyển hoặc zoom ảnh',
-            doneButtonTitle: 'Xong',
-            cancelButtonTitle: 'Hủy',
-            aspectRatioLockEnabled: true,
-            cropStyle: CropStyle.circle,
-          ),
-        ],
+  Future<void> _pickImage() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? pickedFile = await picker.pickImage(
+        source: ImageSource.gallery,
+        maxWidth: 512,
+        maxHeight: 512,
+        imageQuality: 85,
       );
 
-      if (croppedFile != null) {
-        setState(() {
-          _croppedImageFile = File(croppedFile.path);
-          _selectedAvatar = croppedFile.path;
-        });
+      if (pickedFile != null) {
+        final bytes = await pickedFile.readAsBytes();
+
+        if (kIsWeb) {
+          // On web, just use the bytes directly
+          setState(() {
+            _imageBytes = bytes;
+            _imageUrl = null;
+          });
+        } else {
+          // On mobile, try to crop the image
+          final croppedBytes = await cropper.cropImage(pickedFile.path);
+          setState(() {
+            _imageBytes = croppedBytes ?? bytes;
+            _imageUrl = null;
+          });
+        }
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Lỗi chọn ảnh: $e')));
       }
     }
   }
 
-  void _onConfirm() async {
-    if (_selectedAvatar == null) return;
-    final prefs = await SharedPreferences.getInstance();
+  Future<void> _onConfirm() async {
+    if (_imageBytes == null && _imageUrl == null) return;
 
-    // Persist the picked/cropped file path
-    await prefs.setString('user_avatar', _selectedAvatar!);
+    setState(() => _isUploading = true);
+
+    try {
+      String? avatarUrl;
+
+      if (_imageBytes != null) {
+        // Upload custom image to server
+        avatarUrl = await ApiService.uploadAvatar(_imageBytes!);
+      } else if (_imageUrl != null) {
+        // Use Google avatar URL directly
+        avatarUrl = _imageUrl;
+      }
+
+      if (avatarUrl != null) {
+        // Update profile with avatar URL
+        await ApiService.updateProfile(avatarUrl: avatarUrl);
+
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_avatar_url', avatarUrl);
+      }
+
+      if (!mounted) return;
+      Navigator.of(context).pushReplacementNamed('/onboarding_theme_selection');
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Lỗi tải ảnh: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUploading = false);
+    }
+  }
+
+  void _onUseGoogleDefault() async {
+    if (_imageUrl != null) {
+      setState(() => _isUploading = true);
+      try {
+        await ApiService.updateProfile(avatarUrl: _imageUrl!);
+        final prefs = await SharedPreferences.getInstance();
+        await prefs.setString('user_avatar_url', _imageUrl!);
+      } catch (e) {
+        // Best effort - continue anyway
+      }
+      if (mounted) setState(() => _isUploading = false);
+    }
 
     if (!mounted) return;
     Navigator.of(context).pushReplacementNamed('/onboarding_theme_selection');
   }
 
-  void _onUseGoogleDefault() async {
-    // Use Google's default avatar without modification
-    final prefs = await SharedPreferences.getInstance();
-    // Keep the existing user_avatar (Google's avatar) and proceed
-    if (!mounted) return;
+  void _skipAvatar() {
     Navigator.of(context).pushReplacementNamed('/onboarding_theme_selection');
   }
 
@@ -116,9 +145,19 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
   Widget build(BuildContext context) {
     final colorScheme = Theme.of(context).colorScheme;
     final textTheme = Theme.of(context).textTheme;
+    final isDark = Theme.of(context).brightness == Brightness.dark;
 
     return Scaffold(
-      appBar: AppBar(title: const Text('Chọn ảnh đại diện'), centerTitle: true),
+      appBar: AppBar(
+        title: const Text('Chọn ảnh đại diện'),
+        centerTitle: true,
+        actions: [
+          TextButton(
+            onPressed: _skipAvatar,
+            child: Text('Bỏ qua', style: TextStyle(color: colorScheme.primary)),
+          ),
+        ],
+      ),
       body: SafeArea(
         child: Padding(
           padding: const EdgeInsets.all(24.0),
@@ -127,11 +166,10 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
             children: [
               // Circular Avatar Picker
               GestureDetector(
-                onTap: _pickAndCropImage,
+                onTap: _isUploading ? null : _pickImage,
                 child: Stack(
                   alignment: Alignment.center,
                   children: [
-                    // Circular container with border
                     Container(
                       width: 200,
                       height: 200,
@@ -139,21 +177,17 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
                         shape: BoxShape.circle,
                         border: Border.all(
                           color:
-                              _croppedImageFile != null
+                              _hasImage
                                   ? colorScheme.primary
                                   : Colors.grey.shade300,
-                          width: _croppedImageFile != null ? 3 : 2,
+                          width: _hasImage ? 3 : 2,
                         ),
-                        color: Colors.grey.shade100,
+                        color:
+                            isDark
+                                ? Colors.grey.shade800
+                                : Colors.grey.shade100,
                       ),
-                      child: CircleAvatar(
-                        radius: 100,
-                        backgroundColor: Colors.grey.shade200,
-                        backgroundImage:
-                            _croppedImageFile != null
-                                ? FileImage(_croppedImageFile!)
-                                : null,
-                      ),
+                      child: ClipOval(child: _buildAvatarImage()),
                     ),
                     // Camera icon overlay
                     Positioned(
@@ -167,7 +201,7 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
                           color: colorScheme.primary,
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withAlpha(51),
+                              color: Colors.black.withOpacity(0.2),
                               blurRadius: 8,
                               offset: const Offset(0, 2),
                             ),
@@ -183,43 +217,105 @@ class _AvatarSelectionPageState extends State<AvatarSelectionPage> {
                   ],
                 ),
               ),
-              const SizedBox(height: 48),
+              const SizedBox(height: 24),
 
-              // Text label for Google default avatar
-              if (widget.isGoogleSignIn)
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                  child: Text(
-                    'Sử dụng ảnh đại diện mặc định của google',
-                    textAlign: TextAlign.center,
-                    style: textTheme.bodyLarge?.copyWith(
-                      color: Colors.grey.shade600,
-                    ),
-                  ),
+              // Helper text
+              Text(
+                kIsWeb
+                    ? 'Nhấn vào ảnh để chọn từ thiết bị'
+                    : 'Nhấn vào ảnh để chọn và cắt ảnh',
+                style: textTheme.bodyMedium?.copyWith(
+                  color: Colors.grey.shade600,
                 ),
+                textAlign: TextAlign.center,
+              ),
+
+              if (widget.isGoogleSignIn && _imageUrl != null) ...[
+                const SizedBox(height: 12),
+                Text(
+                  'Hoặc sử dụng ảnh từ Google',
+                  style: textTheme.bodyMedium?.copyWith(
+                    color: Colors.grey.shade600,
+                  ),
+                  textAlign: TextAlign.center,
+                ),
+              ],
 
               const Spacer(),
 
               // Action buttons
-              Column(
-                crossAxisAlignment: CrossAxisAlignment.stretch,
-                children: [
-                  ElevatedButton(
-                    onPressed: _selectedAvatar != null ? _onConfirm : null,
-                    child: const Text('Xác nhận'),
-                  ),
-                  const SizedBox(height: 12),
-                  if (widget.isGoogleSignIn)
-                    OutlinedButton(
-                      onPressed: _onUseGoogleDefault,
-                      child: const Text('Sử dụng mặc định'),
+              if (_isUploading)
+                const CircularProgressIndicator()
+              else
+                Column(
+                  crossAxisAlignment: CrossAxisAlignment.stretch,
+                  children: [
+                    ElevatedButton(
+                      onPressed: _hasImage ? _onConfirm : null,
+                      style: ElevatedButton.styleFrom(
+                        padding: const EdgeInsets.symmetric(vertical: 16),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(12),
+                        ),
+                      ),
+                      child: const Text(
+                        'Xác nhận',
+                        style: TextStyle(fontSize: 16),
+                      ),
                     ),
-                ],
-              ),
+                    if (widget.isGoogleSignIn && _imageUrl != null) ...[
+                      const SizedBox(height: 12),
+                      OutlinedButton(
+                        onPressed: _onUseGoogleDefault,
+                        style: OutlinedButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 16),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Text(
+                          'Sử dụng ảnh Google',
+                          style: TextStyle(fontSize: 16),
+                        ),
+                      ),
+                    ],
+                  ],
+                ),
             ],
           ),
         ),
       ),
+    );
+  }
+
+  bool get _hasImage => _imageBytes != null || _imageUrl != null;
+
+  Widget _buildAvatarImage() {
+    if (_imageBytes != null) {
+      return Image.memory(
+        _imageBytes!,
+        width: 200,
+        height: 200,
+        fit: BoxFit.cover,
+      );
+    } else if (_imageUrl != null) {
+      return Image.network(
+        _imageUrl!,
+        width: 200,
+        height: 200,
+        fit: BoxFit.cover,
+        errorBuilder: (_, __, ___) => _buildPlaceholder(),
+      );
+    }
+    return _buildPlaceholder();
+  }
+
+  Widget _buildPlaceholder() {
+    return Container(
+      width: 200,
+      height: 200,
+      color: Colors.grey.shade200,
+      child: Icon(Icons.person, size: 80, color: Colors.grey.shade400),
     );
   }
 }

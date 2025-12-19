@@ -55,6 +55,8 @@ import playlistRoutes from "./routes/playlist.routes.js";
 import favoriteRoutes from "./routes/favorite.routes.js";
 import uploadRoutes from "./routes/upload.routes.js";
 import subscriptionRoutes from "./routes/subscription.routes.js";
+import artistRoutes from "./routes/artist.routes.js";
+import artistVerificationRoutes from "./routes/artistVerification.routes.js";
 
 dotenv.config();
 
@@ -91,6 +93,8 @@ app.use("/api/playlists", playlistRoutes);
 app.use("/api/favorites", favoriteRoutes);
 app.use("/api/upload", uploadRoutes);
 app.use("/api/subscription", subscriptionRoutes);
+app.use("/api/artists", artistRoutes);
+app.use("/api/artist-verification", artistVerificationRoutes);
 
 // Legacy/unmounted route modules (kept for reference or backward compatibility):
 // - share.routes.js: simple shareable link generation (no auth). Not mounted.

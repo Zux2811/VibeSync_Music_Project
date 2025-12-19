@@ -3,13 +3,16 @@ import Playlist from "../models/playlist.model.js";
 import Song from "../models/song.model.js"; // Import Song model
 
 // Cấu trúc include đệ quy để lấy thư mục con, playlist, và các bài hát trong playlist
-const includeNestedFolders = (level = 4) => {
+// Giảm level xuống 2 và chỉ lấy các trường cần thiết của Song để tránh query quá lớn
+const includeNestedFolders = (level = 2) => {
   const playlistInclude = {
     model: Playlist,
+    attributes: ['id', 'name', 'imageUrl', 'folderId', 'createdAt'],
     include: [{
-      model: Song, // Include songs in each playlist
-      as: 'songs', // Make sure this alias matches the one in Playlist model
-      through: { attributes: [] }, // Exclude join table attributes
+      model: Song,
+      as: 'songs',
+      attributes: ['id', 'title', 'artist', 'imageUrl', 'audioUrl', 'duration'], // Chỉ lấy các trường cần thiết
+      through: { attributes: [] },
     }],
   };
 
@@ -22,7 +25,8 @@ const includeNestedFolders = (level = 4) => {
     {
       model: Folder,
       as: "SubFolders",
-      include: includeNestedFolders(level - 1), // Đệ quy
+      attributes: ['id', 'name', 'parentId', 'createdAt'],
+      include: includeNestedFolders(level - 1),
     },
   ];
 };
@@ -52,6 +56,7 @@ export const getFolders = async (req, res) => {
     const userId = req.user.id;
     const folders = await Folder.findAll({
       where: { UserId: userId, parentId: null }, // Fetch only top-level folders
+      attributes: ['id', 'name', 'parentId', 'createdAt'],
       include: includeNestedFolders(),
       order: [["name", "ASC"]], // Optional: sort folders
     });
@@ -62,7 +67,13 @@ export const getFolders = async (req, res) => {
 
     const rootPlaylists = await Playlist.findAll({
       where: { UserId: userId, folderId: null },
-      include: [{ model: Song, as: 'songs', through: { attributes: [] } }],
+      attributes: ['id', 'name', 'imageUrl', 'folderId', 'createdAt'],
+      include: [{ 
+        model: Song, 
+        as: 'songs', 
+        attributes: ['id', 'title', 'artist', 'imageUrl', 'audioUrl', 'duration'],
+        through: { attributes: [] } 
+      }],
       order: [["name", "ASC"]],
     });
 

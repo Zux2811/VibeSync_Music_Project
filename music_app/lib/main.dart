@@ -7,7 +7,7 @@ import 'presentation/auth/signin_page.dart';
 import 'presentation/auth/signup_page.dart';
 import 'presentation/auth/avatar_selection_page.dart';
 
-import 'presentation/auth/auth_provider.dart'; // Import AuthProvider
+import 'presentation/auth/auth_provider.dart';
 import 'presentation/home/home_page.dart';
 import 'presentation/splash/splash_page.dart';
 import 'presentation/player/player_provider.dart';
@@ -17,6 +17,9 @@ import 'presentation/theme/theme_provider.dart';
 import 'presentation/theme/theme_selection_page.dart';
 import 'presentation/home/tabs/library/library_provider.dart';
 import 'presentation/subscription/subscription_status_page.dart';
+import 'presentation/artist/artist_profile_page.dart';
+import 'presentation/artist/artist_dashboard_page.dart';
+import 'presentation/artist/artist_verification_page.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -78,6 +81,22 @@ class MusicApp extends StatelessWidget {
             '/home': (context) => const HomePage(),
             '/player': (context) => const PlayerPage(),
             '/subscription_status': (context) => const SubscriptionStatusPage(),
+            // Artist routes
+            '/artist_dashboard': (context) => const ArtistDashboardPage(),
+            '/artist_verification': (context) => const ArtistVerificationPage(),
+          },
+          // Handle dynamic routes with onGenerateRoute
+          onGenerateRoute: (settings) {
+            // Artist profile with ID: /artist/123
+            if (settings.name?.startsWith('/artist/') == true) {
+              final artistId = int.tryParse(settings.name!.split('/').last);
+              if (artistId != null) {
+                return MaterialPageRoute(
+                  builder: (context) => ArtistProfilePage(artistId: artistId),
+                );
+              }
+            }
+            return null;
           },
         );
       },

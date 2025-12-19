@@ -2,6 +2,7 @@ import 'dart:io';
 
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import '../../../../core/constants/app_colors.dart';
 import 'library_provider.dart';
 import 'library_actions.dart';
 import 'playlist_detail_page.dart';
@@ -34,115 +35,319 @@ class _LibraryTabState extends State<LibraryTab> {
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
     return Scaffold(
-      appBar: AppBar(
-        title: Text(
-          "Thư viện",
-          style: Theme.of(context).textTheme.titleLarge?.copyWith(
-            color: isDark ? Colors.white : Colors.black87,
-          ),
-        ),
-        backgroundColor: Theme.of(context).appBarTheme.backgroundColor,
-        foregroundColor: Theme.of(context).appBarTheme.foregroundColor,
-        elevation: 0,
-        actionsIconTheme: IconThemeData(
-          color: isDark ? Colors.white : Colors.black87,
-        ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.add_box_outlined),
-            tooltip: 'Tạo Playlist mới',
-            onPressed: () => LibraryActions.showCreatePlaylistDialog(context),
-          ),
-          IconButton(
-            icon: const Icon(Icons.create_new_folder_outlined),
-            tooltip: 'Tạo Thư mục mới',
-            onPressed: () => LibraryActions.showCreateFolderDialog(context),
-          ),
-        ],
-      ),
-      body: Consumer<LibraryProvider>(
-        builder: (context, provider, child) {
-          if (provider.isLoading) {
-            return const Center(child: CircularProgressIndicator());
-          }
-          if (provider.errorMessage != null) {
-            return Center(
-              child: Column(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(provider.errorMessage!),
-                  const SizedBox(height: 16),
-                  ElevatedButton(
-                    onPressed: () => provider.fetchLibrary(),
-                    child: const Text('Thử lại'),
-                  ),
-                ],
-              ),
-            );
-          }
-          return ListView(
-            padding: const EdgeInsets.all(16.0),
-            children: [
-              _buildFavoritesTile(context, provider.favoritesPlaylist),
-              const SizedBox(height: 16),
-
-              _buildDownloadedTile(context),
-              const SizedBox(height: 16),
-
-              // Root playlists (not inside any folder)
-              ...provider.rootPlaylists.map((playlist) {
-                return _buildPlaylistTile(context, playlist);
-              }),
-
-              // Folders tree (use FolderNode for per-item expand behavior)
-              ...provider.folders.map((folder) {
-                return FolderNode(
-                  folder: folder,
-                  expandedIds: _expandedIds,
-                  playlistTileBuilder: _buildPlaylistTile,
-                  onOpenFolder:
-                      (f) => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                          builder: (_) => FolderDetailPage(folder: f),
+      backgroundColor: isDark ? AppColors.darkBg : AppColors.lightBg,
+      body: SafeArea(
+        child: Consumer<LibraryProvider>(
+          builder: (context, provider, child) {
+            return CustomScrollView(
+              slivers: [
+                // Header with title and actions
+                SliverToBoxAdapter(
+                  child: Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 16, 16, 8),
+                    child: Row(
+                      children: [
+                        // User avatar (like Spotify)
+                        Container(
+                          width: 32,
+                          height: 32,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color:
+                                isDark
+                                    ? AppColors.darkBgLighter
+                                    : AppColors.lightElevated,
+                          ),
+                          child: Icon(
+                            Icons.person,
+                            size: 18,
+                            color:
+                                isDark
+                                    ? Colors.white70
+                                    : AppColors.textDarkSecondary,
+                          ),
                         ),
+                        const SizedBox(width: 12),
+                        Text(
+                          "Your Library",
+                          style: TextStyle(
+                            color: isDark ? Colors.white : AppColors.textDark,
+                            fontSize: 24,
+                            fontWeight: FontWeight.w700,
+                          ),
+                        ),
+                        const Spacer(),
+                        IconButton(
+                          icon: Icon(
+                            Icons.search,
+                            color: isDark ? Colors.white : AppColors.textDark,
+                          ),
+                          onPressed: () {},
+                        ),
+                        IconButton(
+                          icon: Icon(
+                            Icons.add,
+                            color: isDark ? Colors.white : AppColors.textDark,
+                          ),
+                          onPressed:
+                              () => LibraryActions.showCreatePlaylistDialog(
+                                context,
+                              ),
+                        ),
+                      ],
+                    ),
+                  ),
+                ),
+
+                // Filter chips
+                SliverToBoxAdapter(
+                  child: SizedBox(
+                    height: 40,
+                    child: ListView(
+                      scrollDirection: Axis.horizontal,
+                      padding: const EdgeInsets.symmetric(horizontal: 16),
+                      children: [
+                        _buildFilterChip('Playlists', true, isDark),
+                        _buildFilterChip('Artists', false, isDark),
+                        _buildFilterChip('Albums', false, isDark),
+                        _buildFilterChip('Downloaded', false, isDark),
+                      ],
+                    ),
+                  ),
+                ),
+
+                const SliverToBoxAdapter(child: SizedBox(height: 16)),
+
+                // Loading or error state
+                if (provider.isLoading)
+                  const SliverFillRemaining(
+                    child: Center(child: CircularProgressIndicator()),
+                  )
+                else if (provider.errorMessage != null)
+                  SliverFillRemaining(
+                    child: Center(
+                      child: Column(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          Text(provider.errorMessage!),
+                          const SizedBox(height: 16),
+                          ElevatedButton(
+                            onPressed: () => provider.fetchLibrary(),
+                            child: const Text('Retry'),
+                          ),
+                        ],
                       ),
-                );
-              }),
-            ],
+                    ),
+                  )
+                else
+                  SliverList(
+                    delegate: SliverChildListDelegate([
+                      // Favorites
+                      _buildFavoritesTile(
+                        context,
+                        provider.favoritesPlaylist,
+                        isDark,
+                      ),
+
+                      // Downloaded
+                      _buildDownloadedTile(context, isDark),
+
+                      // Root playlists
+                      ...provider.rootPlaylists.map((playlist) {
+                        return _buildPlaylistTile(
+                          context,
+                          playlist,
+                          isDark: isDark,
+                        );
+                      }),
+
+                      // Folders
+                      ...provider.folders.map((folder) {
+                        return FolderNode(
+                          folder: folder,
+                          expandedIds: _expandedIds,
+                          playlistTileBuilder: _buildPlaylistTile,
+                          onOpenFolder:
+                              (f) => Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (_) => FolderDetailPage(folder: f),
+                                ),
+                              ),
+                        );
+                      }),
+
+                      // Bottom spacing
+                      const SizedBox(height: 100),
+                    ]),
+                  ),
+              ],
+            );
+          },
+        ),
+      ),
+    );
+  }
+
+  Widget _buildFilterChip(String label, bool isSelected, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.only(right: 8),
+      child: FilterChip(
+        label: Text(label),
+        selected: isSelected,
+        onSelected: (value) {},
+        backgroundColor: isDark ? AppColors.darkBgLighter : Colors.white,
+        selectedColor: AppColors.primary,
+        labelStyle: TextStyle(
+          color:
+              isSelected
+                  ? Colors.black
+                  : (isDark ? Colors.white : AppColors.textDark),
+          fontWeight: FontWeight.w500,
+          fontSize: 13,
+        ),
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(20),
+          side: BorderSide.none,
+        ),
+        showCheckmark: false,
+        padding: const EdgeInsets.symmetric(horizontal: 8),
+      ),
+    );
+  }
+
+  Widget _buildFavoritesTile(
+    BuildContext context,
+    Playlist playlist,
+    bool isDark,
+  ) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(
+              builder: (context) => FavoritesPage(favoritesPlaylist: playlist),
+            ),
           );
         },
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              // Gradient icon background (Spotify Liked Songs style)
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  gradient: const LinearGradient(
+                    colors: [Color(0xFF5D4CF7), Color(0xFFB7A8FC)],
+                    begin: Alignment.topLeft,
+                    end: Alignment.bottomRight,
+                  ),
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(
+                  Icons.favorite,
+                  color: Colors.white,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Liked Songs',
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppColors.textDark,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Playlist • ${playlist.songs.length} songs',
+                      style: TextStyle(
+                        color:
+                            isDark
+                                ? AppColors.textSecondary
+                                : AppColors.textDarkSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ),
       ),
     );
   }
 
-  Widget _buildFavoritesTile(BuildContext context, Playlist playlist) {
-    return ListTile(
-      leading: const Icon(Icons.favorite, color: Colors.pinkAccent),
-      title: Text(playlist.name, style: Theme.of(context).textTheme.bodyLarge),
-      subtitle: Text('${playlist.songs.length} bài hát'),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(
-            builder: (context) => FavoritesPage(favoritesPlaylist: playlist),
+  Widget _buildDownloadedTile(BuildContext context, bool isDark) {
+    return Container(
+      margin: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+      child: InkWell(
+        onTap: () {
+          Navigator.push(
+            context,
+            MaterialPageRoute(builder: (_) => const DownloadedSongsPage()),
+          );
+        },
+        borderRadius: BorderRadius.circular(4),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 8),
+          child: Row(
+            children: [
+              Container(
+                width: 56,
+                height: 56,
+                decoration: BoxDecoration(
+                  color: AppColors.primary,
+                  borderRadius: BorderRadius.circular(4),
+                ),
+                child: const Icon(
+                  Icons.download_done,
+                  color: Colors.black,
+                  size: 28,
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      'Downloaded',
+                      style: TextStyle(
+                        color: isDark ? Colors.white : AppColors.textDark,
+                        fontSize: 15,
+                        fontWeight: FontWeight.w500,
+                      ),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      'Downloaded songs',
+                      style: TextStyle(
+                        color:
+                            isDark
+                                ? AppColors.textSecondary
+                                : AppColors.textDarkSecondary,
+                        fontSize: 13,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
           ),
-        );
-      },
-    );
-  }
-
-  Widget _buildDownloadedTile(BuildContext context) {
-    return ListTile(
-      leading: const Icon(Icons.download_done, color: Colors.lightBlueAccent),
-      title: Text('Nhạc đã tải', style: Theme.of(context).textTheme.bodyLarge),
-      subtitle: const Text('Phát các bài hát bạn đã tải về'),
-      onTap: () {
-        Navigator.push(
-          context,
-          MaterialPageRoute(builder: (_) => const DownloadedSongsPage()),
-        );
-      },
+        ),
+      ),
     );
   }
 
@@ -150,6 +355,7 @@ class _LibraryTabState extends State<LibraryTab> {
     BuildContext context,
     Playlist playlist, {
     bool inFolder = false,
+    bool isDark = true,
   }) {
     Widget leadingWidget;
     if (playlist.imageUrl != null && playlist.imageUrl!.isNotEmpty) {

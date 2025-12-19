@@ -1,4 +1,5 @@
 import 'dart:convert';
+import 'dart:typed_data';
 import 'package:flutter/foundation.dart';
 import 'package:http/http.dart' as http;
 import 'package:shared_preferences/shared_preferences.dart';
@@ -87,15 +88,26 @@ class ApiService {
     }
   }
 
-  // Google Sign-In: gửi idToken nhận từ Google lên backend để đổi JWT
-  static Future<Map<String, dynamic>> signInWithGoogle(String idToken) async {
+  // Google Sign-In: gửi idToken hoặc accessToken nhận từ Google lên backend để đổi JWT
+  static Future<Map<String, dynamic>> signInWithGoogle({
+    String? idToken,
+    String? accessToken,
+  }) async {
     final url = Uri.parse("${ApiConstants.auth}/google");
     try {
+      final body = <String, dynamic>{};
+      if (idToken != null && idToken.isNotEmpty) {
+        body['idToken'] = idToken;
+      }
+      if (accessToken != null && accessToken.isNotEmpty) {
+        body['accessToken'] = accessToken;
+      }
+
       final res = await http
           .post(
             url,
             headers: {'Content-Type': 'application/json'},
-            body: jsonEncode({'idToken': idToken}),
+            body: jsonEncode(body),
           )
           .timeout(const Duration(seconds: 20));
 
@@ -581,6 +593,24 @@ class ApiService {
     }
   }
 
+  // Get all playlists (public)
+  static Future<List<Map<String, dynamic>>> getPlaylists() async {
+    final url = Uri.parse(ApiConstants.playlists);
+    try {
+      final res = await http
+          .get(url, headers: {'Content-Type': 'application/json'})
+          .timeout(const Duration(seconds: 20));
+
+      if (res.statusCode == 200) {
+        final List<dynamic> data = jsonDecode(res.body);
+        return data.cast<Map<String, dynamic>>().toList();
+      }
+      return [];
+    } catch (e) {
+      return [];
+    }
+  }
+
   static Future<List<Map<String, dynamic>>> getUserPlaylists() async {
     final url = Uri.parse("${ApiConstants.playlists}/me");
     try {
@@ -688,6 +718,68 @@ class ApiService {
       return {'statusCode': res.statusCode, 'body': jsonDecode(res.body)};
     } catch (e) {
       return {'message': e.toString()};
+    }
+  }
+
+  // ==================== PROFILE METHODS ====================
+
+  /// Upload avatar image and return the URL
+  static Future<String?> uploadAvatar(Uint8List imageBytes) async {
+    final url = Uri.parse("${ApiConstants.upload}/avatar");
+    try {
+      final token = await getToken();
+      if (token == null) return null;
+
+      final request = http.MultipartRequest('POST', url);
+      request.headers['Authorization'] = 'Bearer $token';
+      request.files.add(
+        http.MultipartFile.fromBytes(
+          'avatar',
+          imageBytes,
+          filename: 'avatar_${DateTime.now().millisecondsSinceEpoch}.jpg',
+        ),
+      );
+
+      final streamedResponse = await request.send().timeout(
+        const Duration(seconds: 60),
+      );
+      final response = await http.Response.fromStream(streamedResponse);
+
+      if (response.statusCode == 200 || response.statusCode == 201) {
+        final data = jsonDecode(response.body);
+        return data['avatarUrl'] ?? data['url'];
+      }
+      return null;
+    } catch (e) {
+      return null;
+    }
+  }
+
+  /// Update user profile (including avatar URL)
+  static Future<bool> updateProfile({String? avatarUrl, String? name}) async {
+    final url = Uri.parse("${ApiConstants.auth}/profile");
+    try {
+      final token = await getToken();
+      if (token == null) return false;
+
+      final body = <String, dynamic>{};
+      if (avatarUrl != null) body['avatarUrl'] = avatarUrl;
+      if (name != null) body['name'] = name;
+
+      final res = await http
+          .put(
+            url,
+            headers: {
+              'Content-Type': 'application/json',
+              'Authorization': 'Bearer $token',
+            },
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 30));
+
+      return res.statusCode == 200;
+    } catch (e) {
+      return false;
     }
   }
 }

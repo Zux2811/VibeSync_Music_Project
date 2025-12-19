@@ -1,3 +1,4 @@
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:provider/provider.dart';
@@ -87,9 +88,18 @@ class _SignInPageState extends State<SignInPage>
   Future<void> _loginWithGoogle() async {
     setState(() => _isGoogleLoading = true);
     try {
-      final google = GoogleSignIn(
-        serverClientId: ApiConstants.googleWebClientId,
-      );
+      // For web: use clientId with scopes to get idToken
+      // For mobile: use serverClientId
+      final google =
+          kIsWeb
+              ? GoogleSignIn(
+                clientId: ApiConstants.googleWebClientId,
+                scopes: ['email', 'openid', 'profile'],
+              )
+              : GoogleSignIn(
+                serverClientId: ApiConstants.googleWebClientId,
+                scopes: ['email', 'openid', 'profile'],
+              );
       final account = await google.signIn();
       if (account == null) {
         if (!mounted) return;
@@ -100,17 +110,23 @@ class _SignInPageState extends State<SignInPage>
       }
       final auth = await account.authentication;
       final idToken = auth.idToken;
-      if (idToken == null) {
+      final accessToken = auth.accessToken;
+
+      // On web, idToken might be null, use accessToken as fallback
+      if (idToken == null && accessToken == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text("Không lấy được idToken từ Google")),
+          const SnackBar(content: Text("Không lấy được token từ Google")),
         );
         return;
       }
 
-      // Use AuthProvider to handle Google login
+      // Use AuthProvider to handle Google login with both tokens
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final success = await authProvider.loginWithGoogle(idToken);
+      final success = await authProvider.loginWithGoogle(
+        idToken: idToken,
+        accessToken: accessToken,
+      );
 
       if (success) {
         if (!mounted) return;

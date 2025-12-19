@@ -6,6 +6,14 @@ enum RepeatMode {
   repeatOne, // Lặp lại một bài
 }
 
+/// Combined play mode for shuffle and repeat
+enum PlayMode {
+  normal, // Phát theo thứ tự
+  shuffle, // Phát ngẫu nhiên
+  repeatOne, // Lặp lại một bài
+  repeatAll, // Lặp lại tất cả
+}
+
 enum PlaybackState { playing, paused, stopped, loading }
 
 class Song {
@@ -62,6 +70,11 @@ class PlayerState {
   final bool isLoading;
   final String? errorMessage;
 
+  // AutoMix (Crossfade) settings
+  final bool isAutoMixEnabled;
+  final int crossfadeDurationSeconds; // Duration of crossfade in seconds
+  final bool isCrossfading; // True when crossfade is in progress
+
   PlayerState({
     this.playlist = const [],
     this.currentIndex = 0,
@@ -73,6 +86,9 @@ class PlayerState {
     this.favorites = const {},
     this.isLoading = false,
     this.errorMessage,
+    this.isAutoMixEnabled = false,
+    this.crossfadeDurationSeconds = 8,
+    this.isCrossfading = false,
   });
 
   Song? get currentSong =>
@@ -85,6 +101,14 @@ class PlayerState {
 
   bool get isPlaying => playbackState == PlaybackState.playing;
 
+  /// Get combined play mode from shuffle and repeat states
+  PlayMode get playMode {
+    if (repeatMode == RepeatMode.repeatOne) return PlayMode.repeatOne;
+    if (repeatMode == RepeatMode.repeatAll) return PlayMode.repeatAll;
+    if (isShuffle) return PlayMode.shuffle;
+    return PlayMode.normal;
+  }
+
   PlayerState copyWith({
     List<Song>? playlist,
     int? currentIndex,
@@ -96,6 +120,9 @@ class PlayerState {
     Set<int>? favorites,
     bool? isLoading,
     String? errorMessage,
+    bool? isAutoMixEnabled,
+    int? crossfadeDurationSeconds,
+    bool? isCrossfading,
   }) {
     return PlayerState(
       playlist: playlist ?? this.playlist,
@@ -108,6 +135,10 @@ class PlayerState {
       favorites: favorites ?? this.favorites,
       isLoading: isLoading ?? this.isLoading,
       errorMessage: errorMessage ?? this.errorMessage,
+      isAutoMixEnabled: isAutoMixEnabled ?? this.isAutoMixEnabled,
+      crossfadeDurationSeconds:
+          crossfadeDurationSeconds ?? this.crossfadeDurationSeconds,
+      isCrossfading: isCrossfading ?? this.isCrossfading,
     );
   }
 }

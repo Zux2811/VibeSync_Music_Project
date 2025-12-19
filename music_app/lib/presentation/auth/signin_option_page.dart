@@ -1,14 +1,13 @@
-import 'dart:io';
-
+import 'package:flutter/foundation.dart' show kIsWeb;
 import 'package:flutter/material.dart';
 import 'package:font_awesome_flutter/font_awesome_flutter.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:http/http.dart' as http;
 import 'package:provider/provider.dart';
 import 'package:music_app/presentation/auth/signin_page.dart';
 import 'package:music_app/presentation/auth/signup_page.dart';
 import 'package:music_app/presentation/auth/auth_provider.dart';
 import 'package:music_app/core/constants/api_constants.dart';
+import 'package:music_app/core/constants/app_colors.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
 class SignInOptionPage extends StatefulWidget {
@@ -24,9 +23,18 @@ class _SignInOptionPageState extends State<SignInOptionPage> {
   Future<void> _loginWithGoogle() async {
     setState(() => _isGoogleLoading = true);
     try {
-      final google = GoogleSignIn(
-        serverClientId: ApiConstants.googleWebClientId,
-      );
+      // For web: use clientId with scopes to get idToken
+      // For mobile: use serverClientId
+      final google =
+          kIsWeb
+              ? GoogleSignIn(
+                clientId: ApiConstants.googleWebClientId,
+                scopes: ['email', 'openid', 'profile'],
+              )
+              : GoogleSignIn(
+                serverClientId: ApiConstants.googleWebClientId,
+                scopes: ['email', 'openid', 'profile'],
+              );
       final account = await google.signIn();
       if (account == null) {
         if (!mounted) return;
@@ -37,17 +45,23 @@ class _SignInOptionPageState extends State<SignInOptionPage> {
       }
       final auth = await account.authentication;
       final idToken = auth.idToken;
-      if (idToken == null) {
+      final accessToken = auth.accessToken;
+
+      // On web, idToken might be null, use accessToken as fallback
+      if (idToken == null && accessToken == null) {
         if (!mounted) return;
         ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Không lấy được idToken từ Google')),
+          const SnackBar(content: Text('Không lấy được token từ Google')),
         );
         return;
       }
 
-      // Use AuthProvider to handle Google login
+      // Use AuthProvider to handle Google login with both tokens
       final authProvider = Provider.of<AuthProvider>(context, listen: false);
-      final success = await authProvider.loginWithGoogle(idToken);
+      final success = await authProvider.loginWithGoogle(
+        idToken: idToken,
+        accessToken: accessToken,
+      );
 
       if (success) {
         if (!mounted) return;
@@ -57,25 +71,16 @@ class _SignInOptionPageState extends State<SignInOptionPage> {
         final isReturningUser =
             prefs.getBool('device_authenticated_before') ?? false;
 
-        // Try to use Google photoUrl as profile avatar automatically
+        // Save Google photoUrl for avatar selection (works on both web and mobile)
         try {
-          final google = GoogleSignIn(scopes: const ['email', 'profile']);
-          final current = await google.signInSilently();
-          var photoUrl = (current ?? account).photoUrl;
+          var photoUrl = account.photoUrl;
           if (photoUrl != null && photoUrl.isNotEmpty) {
             // Request higher resolution Google avatar if available
             if (!photoUrl.contains('sz=')) {
               photoUrl = '$photoUrl${photoUrl.contains('?') ? '&' : '?'}sz=512';
             }
-            final resp = await http.get(Uri.parse(photoUrl));
-            if (resp.statusCode == 200 && resp.bodyBytes.isNotEmpty) {
-              final tmpPath =
-                  '${Directory.systemTemp.path}/google_avatar_${DateTime.now().millisecondsSinceEpoch}.jpg';
-              final file = File(tmpPath);
-              await file.writeAsBytes(resp.bodyBytes);
-              // Save path to SharedPreferences for confirmation at AvatarSelectionPage
-              await prefs.setString('user_avatar', file.path);
-            }
+            // Save URL instead of file path (works on web and mobile)
+            await prefs.setString('google_avatar_url', photoUrl);
           }
         } catch (_) {
           // best-effort only; ignore errors
@@ -113,160 +118,174 @@ class _SignInOptionPageState extends State<SignInOptionPage> {
 
   @override
   Widget build(BuildContext context) {
-    final canPop = Navigator.of(context).canPop();
+    final isDark = Theme.of(context).brightness == Brightness.dark;
+
     return Scaffold(
-      backgroundColor: Theme.of(context).scaffoldBackgroundColor,
-      appBar: AppBar(
-        backgroundColor: Colors.transparent,
-        elevation: 0,
-        leading:
-            canPop
-                ? IconButton(
-                  icon: const Icon(
-                    Icons.chevron_left,
-                    color: Colors.white,
-                    size: 28,
-                  ),
-                  onPressed: () => Navigator.of(context).maybePop(),
-                  tooltip: 'Back',
-                )
-                : null,
-      ),
+      backgroundColor: isDark ? AppColors.darkBg : Colors.white,
       body: SafeArea(
         child: Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 30),
+          padding: const EdgeInsets.symmetric(horizontal: 32),
           child: Column(
-            crossAxisAlignment: CrossAxisAlignment.center,
             children: [
-              const SizedBox(height: 20),
+              const SizedBox(height: 60),
+
+              // Logo
               Center(
                 child: Image.asset(
                   'assets/logo/logo.png',
-                  width: 200,
-                  height: 200,
+                  width: 80,
+                  height: 80,
                 ),
               ),
 
+              const SizedBox(height: 48),
+
+              // Title
               Text(
-                "Let's get you in",
-                style: Theme.of(context).textTheme.titleLarge,
+                'Millions of songs.\nFree on VibeSync.',
+                style: TextStyle(
+                  color: isDark ? Colors.white : AppColors.textDark,
+                  fontSize: 32,
+                  fontWeight: FontWeight.w700,
+                  height: 1.2,
+                ),
+                textAlign: TextAlign.center,
               ),
-              const SizedBox(height: 40),
 
-              // Gmail button with loading state
-              OutlinedButton.icon(
-                onPressed: _isGoogleLoading ? null : _loginWithGoogle,
-                style: OutlinedButton.styleFrom(
-                  side: BorderSide(
-                    color: Theme.of(
+              const Spacer(),
+
+              // Sign up free button
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: ElevatedButton(
+                  onPressed: () {
+                    Navigator.push(
                       context,
-                    ).colorScheme.onSurface.withAlpha(61),
+                      MaterialPageRoute(builder: (_) => const SignUpPage()),
+                    );
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    foregroundColor: Colors.black,
+                    elevation: 0,
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
                   ),
-                  foregroundColor: Theme.of(context).colorScheme.onSurface,
-                  minimumSize: const Size(double.infinity, 55),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                  child: const Text(
+                    'Sign up free',
+                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                   ),
-                ),
-                icon:
-                    _isGoogleLoading
-                        ? const SizedBox(
-                          width: 22,
-                          height: 22,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                        : Icon(
-                          FontAwesomeIcons.google,
-                          size: 20,
-                          color: Theme.of(context).iconTheme.color,
-                        ),
-                label: Text(
-                  _isGoogleLoading ? 'Signing in…' : 'Continue with Gmail',
-                  style: const TextStyle(fontWeight: FontWeight.bold),
                 ),
               ),
 
-              const SizedBox(height: 15),
-              _buildSocialButton(Icons.facebook, 'Continue with Facebook'),
-              const SizedBox(height: 15),
-              _buildSocialButton(Icons.apple, 'Continue with Apple'),
+              const SizedBox(height: 12),
 
-              const SizedBox(height: 25),
-              Row(
-                children: [
-                  Expanded(
-                    child: Divider(
-                      color: Theme.of(context).dividerColor,
-                      thickness: 1,
+              // Continue with Google
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: OutlinedButton.icon(
+                  onPressed: _isGoogleLoading ? null : _loginWithGoogle,
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? Colors.white : AppColors.textDark,
+                    side: BorderSide(
+                      color: isDark ? Colors.white38 : Colors.black26,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
                     ),
                   ),
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                    child: Text(
-                      'or',
-                      style: Theme.of(context).textTheme.bodyMedium,
+                  icon:
+                      _isGoogleLoading
+                          ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(strokeWidth: 2),
+                          )
+                          : const FaIcon(FontAwesomeIcons.google, size: 18),
+                  label: Text(
+                    _isGoogleLoading ? 'Signing in...' : 'Continue with Google',
+                    style: const TextStyle(
+                      fontSize: 15,
+                      fontWeight: FontWeight.w600,
                     ),
                   ),
-                  Expanded(
-                    child: Divider(
-                      color: Theme.of(context).dividerColor,
-                      thickness: 1,
-                    ),
-                  ),
-                ],
+                ),
               ),
-              const SizedBox(height: 25),
 
-              // Login with password
-              ElevatedButton(
-                onPressed: () {
+              const SizedBox(height: 12),
+
+              // Continue with Facebook (placeholder)
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: OutlinedButton.icon(
+                  onPressed: () {},
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? Colors.white : AppColors.textDark,
+                    side: BorderSide(
+                      color: isDark ? Colors.white38 : Colors.black26,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                  icon: const FaIcon(FontAwesomeIcons.facebook, size: 18),
+                  label: const Text(
+                    'Continue with Facebook',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 12),
+
+              // Continue with Apple (placeholder)
+              SizedBox(
+                width: double.infinity,
+                height: 50,
+                child: OutlinedButton.icon(
+                  onPressed: () {},
+                  style: OutlinedButton.styleFrom(
+                    foregroundColor: isDark ? Colors.white : AppColors.textDark,
+                    side: BorderSide(
+                      color: isDark ? Colors.white38 : Colors.black26,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(25),
+                    ),
+                  ),
+                  icon: const FaIcon(FontAwesomeIcons.apple, size: 18),
+                  label: const Text(
+                    'Continue with Apple',
+                    style: TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                  ),
+                ),
+              ),
+
+              const SizedBox(height: 24),
+
+              // Log in link
+              GestureDetector(
+                onTap: () {
                   Navigator.push(
                     context,
                     MaterialPageRoute(builder: (_) => const SignInPage()),
                   );
                 },
-                style: ElevatedButton.styleFrom(
-                  backgroundColor: Theme.of(context).colorScheme.primary,
-                  foregroundColor: Theme.of(context).colorScheme.onPrimary,
-                  minimumSize: const Size(double.infinity, 55),
-                  shape: RoundedRectangleBorder(
-                    borderRadius: BorderRadius.circular(12),
+                child: Text(
+                  'Log in',
+                  style: TextStyle(
+                    color: isDark ? Colors.white : AppColors.textDark,
+                    fontSize: 16,
+                    fontWeight: FontWeight.w700,
                   ),
                 ),
-                child: const Text(
-                  'Log in with a password',
-                  style: TextStyle(fontSize: 16),
-                ),
               ),
-              const Spacer(),
-              Row(
-                mainAxisAlignment: MainAxisAlignment.center,
-                children: [
-                  Text(
-                    "Don't have an account? ",
-                    style: Theme.of(context).textTheme.bodyMedium,
-                  ),
-                  GestureDetector(
-                    onTap: () {
-                      Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (_) => const SignUpPage()),
-                      );
-                    },
-                    child: Text(
-                      'Sign Up',
-                      style: TextStyle(
-                        color: Theme.of(context).colorScheme.primary,
-                        fontWeight: FontWeight.bold,
-                      ),
-                    ),
-                  ),
-                ],
-              ),
-              const SizedBox(height: 30),
+
+              const SizedBox(height: 40),
             ],
           ),
         ),

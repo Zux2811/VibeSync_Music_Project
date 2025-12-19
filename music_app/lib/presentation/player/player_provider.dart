@@ -1,5 +1,6 @@
 // lib/presentation/player/player_provider.dart
 
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:just_audio/just_audio.dart' as ja;
 import '../../data/models/player_state_model.dart';
@@ -10,8 +11,17 @@ import 'dart:math';
 class PlayerProvider extends ChangeNotifier {
   final PlayerRepository _repository = PlayerRepository();
 
-  // Audio engine
+  // Primary audio engine
   final ja.AudioPlayer _player = ja.AudioPlayer();
+
+  // Secondary audio player for AutoMix crossfade
+  ja.AudioPlayer? _nextPlayer;
+
+  // AutoMix crossfade state
+  Timer? _crossfadeTimer;
+  bool _isCrossfading = false;
+  static const String _autoMixKey = 'auto_mix_enabled';
+  static const String _crossfadeDurationKey = 'crossfade_duration';
 
   PlayerState _state = PlayerState();
 
@@ -21,15 +31,235 @@ class PlayerProvider extends ChangeNotifier {
   bool get isFavorite => _state.isCurrentSongFavorite;
   RepeatMode get repeatMode => _state.repeatMode;
   bool get isShuffle => _state.isShuffle;
+  bool get isAutoMixEnabled => _state.isAutoMixEnabled;
+  int get crossfadeDuration => _state.crossfadeDurationSeconds;
 
   PlayerProvider() {
     _attachPlayerListeners();
+    _loadAutoMixSettings();
+  }
+
+  /// Load AutoMix settings from SharedPreferences
+  Future<void> _loadAutoMixSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    final enabled = prefs.getBool(_autoMixKey) ?? false;
+    final duration = prefs.getInt(_crossfadeDurationKey) ?? 8;
+    _updateState(
+      _state.copyWith(
+        isAutoMixEnabled: enabled,
+        crossfadeDurationSeconds: duration,
+      ),
+    );
+  }
+
+  /// Save AutoMix settings to SharedPreferences
+  Future<void> _saveAutoMixSettings() async {
+    final prefs = await SharedPreferences.getInstance();
+    await prefs.setBool(_autoMixKey, _state.isAutoMixEnabled);
+    await prefs.setInt(_crossfadeDurationKey, _state.crossfadeDurationSeconds);
+  }
+
+  /// Toggle AutoMix on/off
+  Future<void> toggleAutoMix() async {
+    final newValue = !_state.isAutoMixEnabled;
+    _updateState(_state.copyWith(isAutoMixEnabled: newValue));
+    await _saveAutoMixSettings();
+
+    if (!newValue) {
+      // Cancel any ongoing crossfade when disabling
+      _cancelCrossfade();
+    }
+  }
+
+  /// Set crossfade duration (in seconds, 3-15 range recommended)
+  Future<void> setCrossfadeDuration(int seconds) async {
+    final clamped = seconds.clamp(3, 15);
+    _updateState(_state.copyWith(crossfadeDurationSeconds: clamped));
+    await _saveAutoMixSettings();
+  }
+
+  /// Cancel ongoing crossfade
+  void _cancelCrossfade() {
+    _crossfadeTimer?.cancel();
+    _crossfadeTimer = null;
+    _isCrossfading = false;
+    _nextPlayer?.dispose();
+    _nextPlayer = null;
+    _player.setVolume(1.0);
+    _updateState(_state.copyWith(isCrossfading: false));
+  }
+
+  /// Check if we should start crossfade based on current position
+  void _checkAutoMixTrigger(Duration position) {
+    if (!_state.isAutoMixEnabled || _isCrossfading) return;
+    if (_state.totalDuration == Duration.zero) return;
+    if (_state.playlist.length <= 1) return;
+    if (!_state.isPlaying) return;
+
+    // Calculate remaining time
+    final remaining = _state.totalDuration - position;
+    final crossfadeDur = Duration(seconds: _state.crossfadeDurationSeconds);
+
+    // Buffer to prevent triggering too early or too late
+    const minRemaining = Duration(milliseconds: 500);
+
+    // Start crossfade when remaining time is within crossfade duration window
+    if (remaining <= crossfadeDur && remaining > minRemaining) {
+      debugPrint('AutoMix: Triggering crossfade. Remaining: $remaining');
+      _startCrossfade();
+    }
+  }
+
+  /// Get the next track index based on current mode
+  int _getNextIndex() {
+    if (_state.playlist.isEmpty) return 0;
+
+    if (_state.isShuffle) {
+      final r = Random();
+      int nextIdx;
+      do {
+        nextIdx = r.nextInt(_state.playlist.length);
+      } while (nextIdx == _state.currentIndex && _state.playlist.length > 1);
+      return nextIdx;
+    }
+
+    int nextIndex = _state.currentIndex + 1;
+    if (nextIndex >= _state.playlist.length) {
+      if (_state.repeatMode == RepeatMode.repeatAll) {
+        nextIndex = 0;
+      } else {
+        return -1; // No next track
+      }
+    }
+    return nextIndex;
+  }
+
+  /// Start the crossfade transition
+  Future<void> _startCrossfade() async {
+    if (_isCrossfading) return;
+    if (!_state.isPlaying) return;
+
+    final nextIndex = _getNextIndex();
+    if (nextIndex < 0) {
+      debugPrint('AutoMix: No next track available');
+      return;
+    }
+
+    _isCrossfading = true;
+    _updateState(_state.copyWith(isCrossfading: true));
+
+    // Get next song
+    final nextSong = _state.playlist[nextIndex];
+    debugPrint('AutoMix: Starting crossfade to "${nextSong.title}"');
+
+    // Create and prepare next player
+    _nextPlayer?.dispose();
+    _nextPlayer = ja.AudioPlayer();
+
+    try {
+      await _nextPlayer!.setUrl(nextSong.audioUrl);
+      await _nextPlayer!.setVolume(0.0);
+      await _nextPlayer!.play();
+    } catch (e) {
+      debugPrint('AutoMix: Failed to prepare next track: $e');
+      _cancelCrossfade();
+      return;
+    }
+
+    // Calculate crossfade parameters
+    final crossfadeMs = _state.crossfadeDurationSeconds * 1000;
+    const tickMs = 100; // Update every 100ms for smooth transition
+    final totalTicks = crossfadeMs ~/ tickMs;
+    int currentTick = 0;
+
+    // Store start position of next player for syncing later
+    Duration nextPlayerStartPosition = Duration.zero;
+
+    // Start crossfade timer
+    _crossfadeTimer?.cancel();
+    _crossfadeTimer = Timer.periodic(const Duration(milliseconds: tickMs), (
+      timer,
+    ) async {
+      if (!_isCrossfading) {
+        timer.cancel();
+        return;
+      }
+
+      currentTick++;
+
+      // Calculate volumes using ease curve
+      final progress = (currentTick / totalTicks).clamp(0.0, 1.0);
+      final easeProgress = _easeInOutCubic(progress);
+
+      final currentVolume = (1.0 - easeProgress).clamp(0.0, 1.0);
+      final nextVolume = easeProgress.clamp(0.0, 1.0);
+
+      try {
+        await _player.setVolume(currentVolume);
+        await _nextPlayer?.setVolume(nextVolume);
+      } catch (e) {
+        debugPrint('AutoMix: Volume adjustment error: $e');
+      }
+
+      // Crossfade complete
+      if (currentTick >= totalTicks) {
+        timer.cancel();
+        nextPlayerStartPosition = _nextPlayer?.position ?? Duration.zero;
+        await _completeCrossfade(nextIndex, nextPlayerStartPosition);
+      }
+    });
+  }
+
+  /// Easing function for smooth volume transitions
+  double _easeInOutCubic(double t) {
+    return t < 0.5 ? 4 * t * t * t : 1 - pow(-2 * t + 2, 3) / 2;
+  }
+
+  /// Complete the crossfade and swap players
+  Future<void> _completeCrossfade(int nextIndex, Duration syncPosition) async {
+    try {
+      // Stop the current track on main player
+      await _player.pause();
+
+      // Reset main player volume
+      await _player.setVolume(1.0);
+
+      // Seek main player to the next track
+      await _player.seek(syncPosition, index: nextIndex);
+
+      // Start playing from synced position
+      await _player.play();
+
+      // Update state to the new track
+      _updateState(
+        _state.copyWith(
+          currentIndex: nextIndex,
+          currentPosition: syncPosition,
+          isCrossfading: false,
+          playbackState: PlaybackState.playing,
+        ),
+      );
+    } catch (e) {
+      debugPrint('AutoMix: Complete crossfade error: $e');
+    } finally {
+      // Clean up next player
+      try {
+        await _nextPlayer?.stop();
+        await _nextPlayer?.dispose();
+      } catch (e) {
+        debugPrint('AutoMix: Cleanup error: $e');
+      }
+      _nextPlayer = null;
+      _isCrossfading = false;
+      _crossfadeTimer = null;
+    }
   }
 
   void _attachPlayerListeners() {
-    // Position updates
+    // Position updates - also check for AutoMix trigger
     _player.positionStream.listen((pos) {
       _updateState(_state.copyWith(currentPosition: pos));
+      _checkAutoMixTrigger(pos);
     });
 
     // Duration updates
@@ -200,6 +430,55 @@ class PlayerProvider extends ChangeNotifier {
     _updateState(_state.copyWith(repeatMode: nextMode));
   }
 
+  /// Cycle through play modes: Normal -> Shuffle -> RepeatOne -> RepeatAll -> Normal
+  Future<void> cyclePlayMode() async {
+    final currentMode = _state.playMode;
+
+    switch (currentMode) {
+      case PlayMode.normal:
+        // Switch to shuffle
+        await _player.setShuffleModeEnabled(true);
+        await _player.setLoopMode(ja.LoopMode.off);
+        _updateState(
+          _state.copyWith(isShuffle: true, repeatMode: RepeatMode.noRepeat),
+        );
+        break;
+
+      case PlayMode.shuffle:
+        // Switch to repeat one
+        await _player.setShuffleModeEnabled(false);
+        await _player.setLoopMode(ja.LoopMode.one);
+        _updateState(
+          _state.copyWith(isShuffle: false, repeatMode: RepeatMode.repeatOne),
+        );
+        break;
+
+      case PlayMode.repeatOne:
+        // Switch to repeat all
+        await _player.setLoopMode(ja.LoopMode.all);
+        _updateState(_state.copyWith(repeatMode: RepeatMode.repeatAll));
+        break;
+
+      case PlayMode.repeatAll:
+        // Switch back to normal
+        await _player.setLoopMode(ja.LoopMode.off);
+        _updateState(_state.copyWith(repeatMode: RepeatMode.noRepeat));
+        break;
+    }
+  }
+
+  /// Get current play mode
+  PlayMode get playMode => _state.playMode;
+
+  /// Set player volume (0.0 to 1.0)
+  Future<void> setVolume(double volume) async {
+    final clampedVolume = volume.clamp(0.0, 1.0);
+    await _player.setVolume(clampedVolume);
+  }
+
+  /// Get current volume
+  double get volume => _player.volume;
+
   // Cập nhật vị trí phát
   void updatePosition(Duration position) {
     _player.seek(position);
@@ -340,6 +619,7 @@ class PlayerProvider extends ChangeNotifier {
 
   @override
   void dispose() {
+    _cancelCrossfade();
     _player.dispose();
     super.dispose();
   }

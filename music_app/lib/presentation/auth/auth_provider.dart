@@ -125,14 +125,18 @@ class AuthProvider extends ChangeNotifier {
 
   /// Logs in a user via Google Sign-In.
   /// Delegates HTTP calls to ApiService.signInWithGoogle and handles state management.
-  Future<bool> loginWithGoogle(String idToken) async {
+  /// Supports both idToken and accessToken for web compatibility.
+  Future<bool> loginWithGoogle({String? idToken, String? accessToken}) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       // Delegate HTTP call to ApiService
-      final data = await ApiService.signInWithGoogle(idToken);
+      final data = await ApiService.signInWithGoogle(
+        idToken: idToken,
+        accessToken: accessToken,
+      );
 
       final statusCode = data['statusCode'] as int?;
       final token = data['token'] as String?;

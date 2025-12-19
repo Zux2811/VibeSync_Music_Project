@@ -186,11 +186,11 @@ export const updateProfile = async (req, res) => {
 export const googleSignIn = async (req, res) => {
   try {
     logger.info("Received Google sign-in request");
-    const { idToken } = req.body;
+    const { idToken, accessToken } = req.body;
 
-    if (!idToken) {
-      logger.warn("Google sign-in failed: Missing idToken");
-      return res.status(400).json({ message: "Missing idToken" });
+    if (!idToken && !accessToken) {
+      logger.warn("Google sign-in failed: Missing idToken and accessToken");
+      return res.status(400).json({ message: "Missing idToken or accessToken" });
     }
 
     // Support multiple Google Client IDs (Android/iOS/Web) via comma-separated env
@@ -204,31 +204,59 @@ export const googleSignIn = async (req, res) => {
       return res.status(500).json({ message: "Server missing GOOGLE_CLIENT_ID(S)" });
     }
 
-    logger.debug("Verifying Google ID token", { audiences: allowedClientIds });
-    const googleClient = new OAuth2Client(allowedClientIds[0]);
+    let email, name;
 
-    // Verify Google ID token (accept multiple audiences)
-    let payload;
-    try {
-      const ticket = await googleClient.verifyIdToken({
-        idToken,
-        audience: allowedClientIds,
-      });
-      payload = ticket.getPayload();
-    } catch (e) {
-      logger.warn("Google ID token verification failed", { error: e.message });
-      return res.status(401).json({ message: "Invalid Google token", error: e.message });
+    // Try to verify using idToken first
+    if (idToken) {
+      logger.debug("Verifying Google ID token", { audiences: allowedClientIds });
+      const googleClient = new OAuth2Client(allowedClientIds[0]);
+
+      // Verify Google ID token (accept multiple audiences)
+      let payload;
+      try {
+        const ticket = await googleClient.verifyIdToken({
+          idToken,
+          audience: allowedClientIds,
+        });
+        payload = ticket.getPayload();
+      } catch (e) {
+        logger.warn("Google ID token verification failed", { error: e.message });
+        return res.status(401).json({ message: "Invalid Google token", error: e.message });
+      }
+
+      // Extra safety: ensure aud in allowed list
+      const aud = payload?.aud;
+      if (!aud || !allowedClientIds.includes(aud)) {
+        logger.warn("Google sign-in failed: Token audience not allowed", { aud });
+        return res.status(401).json({ message: "Invalid Google token audience" });
+      }
+
+      email = payload?.email;
+      name = payload?.name || email?.split("@")[0];
+    } 
+    // Fallback: use accessToken to get user info from Google API
+    else if (accessToken) {
+      logger.debug("Verifying Google access token via userinfo API");
+      try {
+        const response = await fetch(`https://www.googleapis.com/oauth2/v3/userinfo?access_token=${accessToken}`);
+        if (!response.ok) {
+          const errorText = await response.text();
+          logger.warn("Google access token verification failed", { error: errorText });
+          return res.status(401).json({ message: "Invalid Google access token" });
+        }
+        const userInfo = await response.json();
+        email = userInfo.email;
+        name = userInfo.name || email?.split("@")[0];
+        
+        if (!userInfo.email_verified) {
+          logger.warn("Google sign-in failed: Email not verified", { email });
+          return res.status(401).json({ message: "Google email not verified" });
+        }
+      } catch (e) {
+        logger.warn("Google access token verification error", { error: e.message });
+        return res.status(401).json({ message: "Failed to verify Google access token", error: e.message });
+      }
     }
-
-    // Extra safety: ensure aud in allowed list
-    const aud = payload?.aud;
-    if (!aud || !allowedClientIds.includes(aud)) {
-      logger.warn("Google sign-in failed: Token audience not allowed", { aud });
-      return res.status(401).json({ message: "Invalid Google token audience" });
-    }
-
-    const email = payload?.email;
-    const name = payload?.name || email?.split("@")[0];
 
     if (!email) {
       logger.warn("Google sign-in failed: Cannot extract email from Google token");

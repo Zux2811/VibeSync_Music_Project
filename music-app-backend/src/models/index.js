@@ -63,6 +63,10 @@ import CommentLike from "./commentLike.model.js";
 import Tier from "./tier.model.js";
 import UserSubscription from "./userSubscription.model.js";
 import PasswordReset from "./passwordReset.model.js";
+import ArtistProfile from "./artistProfile.model.js";
+import ArtistVerification from "./artistVerification.model.js";
+import Album from "./album.model.js";
+import ArtistFollow from "./artistFollow.model.js";
 
 // Associations
 
@@ -152,6 +156,46 @@ Comment.belongsToMany(User, {
   as: 'likedBy',
 });
 
+// ========== ARTIST ASSOCIATIONS ==========
+
+// Artist Profile (1:1 with User who has role='artist')
+User.hasOne(ArtistProfile, { foreignKey: 'userId', as: 'artistProfile', onDelete: 'CASCADE' });
+ArtistProfile.belongsTo(User, { foreignKey: 'userId', as: 'user', constraints: false });
+
+// Artist Verification Requests
+User.hasMany(ArtistVerification, { foreignKey: 'userId', as: 'verificationRequests', onDelete: 'CASCADE' });
+ArtistVerification.belongsTo(User, { foreignKey: 'userId', as: 'user', constraints: false });
+
+// Albums belong to artists (User with role='artist')
+User.hasMany(Album, { foreignKey: 'artistId', as: 'albums', onDelete: 'CASCADE' });
+Album.belongsTo(User, { foreignKey: 'artistId', as: 'artist', constraints: false });
+
+// Songs can belong to an artist
+User.hasMany(Song, { foreignKey: 'artistId', as: 'artistSongs', onDelete: 'SET NULL' });
+Song.belongsTo(User, { foreignKey: 'artistId', as: 'artistUser', constraints: false });
+
+// Songs can belong to an album
+Album.hasMany(Song, { foreignKey: 'albumId', as: 'tracks', onDelete: 'SET NULL' });
+Song.belongsTo(Album, { foreignKey: 'albumId', as: 'albumRef', constraints: false });
+
+// Artist follows (many-to-many through ArtistFollow)
+User.belongsToMany(User, {
+  through: ArtistFollow,
+  as: 'followingArtists',
+  foreignKey: 'followerId',
+  otherKey: 'artistId'
+});
+User.belongsToMany(User, {
+  through: ArtistFollow,
+  as: 'followers',
+  foreignKey: 'artistId',
+  otherKey: 'followerId'
+});
+
+// Direct associations for ArtistFollow
+ArtistFollow.belongsTo(User, { foreignKey: 'followerId', as: 'follower' });
+ArtistFollow.belongsTo(User, { foreignKey: 'artistId', as: 'artist' });
+
 export {
   User,
   Song,
@@ -163,5 +207,11 @@ export {
   Report,
   Favorite,
   CommentLike,
+  Tier,
+  UserSubscription,
   PasswordReset,
+  ArtistProfile,
+  ArtistVerification,
+  Album,
+  ArtistFollow,
 };

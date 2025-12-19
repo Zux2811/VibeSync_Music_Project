@@ -139,16 +139,6 @@ class _CommentsSectionState extends State<CommentsSection> {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Row(
-              children: [
-                const Icon(Icons.chat_bubble_outline),
-                const SizedBox(width: 8),
-                Text(
-                  'Bình luận',
-                  style: Theme.of(context).textTheme.titleMedium,
-                ),
-              ],
-            ),
             const SizedBox(height: 8),
             CommentComposer(
               hintText: 'Viết bình luận...',

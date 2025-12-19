@@ -1,0 +1,252 @@
+/* ===== Logo Section ===== */
+.logo-section {
+  flex: 1;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  background: linear-gradient(135deg, #0aa8ec 0%, #ccf2f5 50%, #0369a1 100%);
+  position: relative;
+  overflow: hidden;
+  min-height: 100vh;
+}
+
+/* Background animated circles */
+.bg-circles {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+}
+
+.circle {
+  position: absolute;
+  border-radius: 50%;
+  background: rgba(255, 255, 255, 0.08);
+  animation: float 20s infinite ease-in-out;
+}
+
+.circle-1 {
+  width: 400px;
+  height: 400px;
+  top: -100px;
+  left: -100px;
+  animation-delay: 0s;
+}
+
+.circle-2 {
+  width: 300px;
+  height: 300px;
+  bottom: -50px;
+  right: -50px;
+  animation-delay: -5s;
+}
+
+.circle-3 {
+  width: 200px;
+  height: 200px;
+  top: 50%;
+  right: 20%;
+  animation-delay: -10s;
+}
+
+@keyframes float {
+  0%, 100% {
+    transform: translateY(0) scale(1);
+  }
+  50% {
+    transform: translateY(-30px) scale(1.05);
+  }
+}
+
+/* Logo container */
+.logo-container {
+  position: relative;
+  width: 220px;
+  height: 220px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 10;
+}
+
+/* Wave rings */
+.wave-ring {
+  position: absolute;
+  border-radius: 50%;
+  border: 2px solid rgba(255, 255, 255, 0.3);
+  animation: wave-pulse 3s infinite ease-out;
+}
+
+.wave-ring-1 {
+  width: 140%;
+  height: 140%;
+  animation-delay: 0s;
+}
+
+.wave-ring-2 {
+  width: 170%;
+  height: 170%;
+  animation-delay: 0.5s;
+}
+
+.wave-ring-3 {
+  width: 200%;
+  height: 200%;
+  animation-delay: 1s;
+}
+
+.wave-ring-4 {
+  width: 230%;
+  height: 230%;
+  animation-delay: 1.5s;
+}
+
+@keyframes wave-pulse {
+  0% {
+    transform: scale(0.8);
+    opacity: 1;
+  }
+  100% {
+    transform: scale(1.2);
+    opacity: 0;
+  }
+}
+
+/* Logo wrapper */
+.logo-wrapper {
+  width: 150px;
+  height: 150px;
+  border-radius: 50%;
+  overflow: hidden;
+  box-shadow: 
+    0 0 0 8px rgba(255, 255, 255, 0.2),
+    0 0 40px rgba(0, 0, 0, 0.3),
+    0 0 80px rgba(14, 165, 233, 0.5);
+  animation: logo-glow 3s infinite ease-in-out;
+  z-index: 10;
+}
+
+.logo-image {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+}
+
+@keyframes logo-glow {
+  0%, 100% {
+    box-shadow: 
+      0 0 0 8px rgba(255, 255, 255, 0.2),
+      0 0 40px rgba(0, 0, 0, 0.3),
+      0 0 80px rgba(14, 165, 233, 0.5);
+  }
+  50% {
+    box-shadow: 
+      0 0 0 12px rgba(255, 255, 255, 0.3),
+      0 0 60px rgba(0, 0, 0, 0.4),
+      0 0 100px rgba(14, 165, 233, 0.7);
+  }
+}
+
+/* Sound bars */
+.sound-bars {
+  position: absolute;
+  bottom: -60px;
+  display: flex;
+  gap: 4px;
+  align-items: flex-end;
+  height: 40px;
+}
+
+.sound-bar {
+  width: 4px;
+  background: linear-gradient(to top, rgba(255, 255, 255, 0.4), rgba(255, 255, 255, 0.9));
+  border-radius: 2px;
+  animation: sound-wave 1s infinite ease-in-out;
+}
+
+@keyframes sound-wave {
+  0%, 100% {
+    height: 8px;
+  }
+  50% {
+    height: 35px;
+  }
+}
+
+.sound-bar:nth-child(1) { animation-delay: 0.0s; }
+.sound-bar:nth-child(2) { animation-delay: 0.1s; }
+.sound-bar:nth-child(3) { animation-delay: 0.2s; }
+.sound-bar:nth-child(4) { animation-delay: 0.3s; }
+.sound-bar:nth-child(5) { animation-delay: 0.4s; }
+.sound-bar:nth-child(6) { animation-delay: 0.5s; }
+.sound-bar:nth-child(7) { animation-delay: 0.4s; }
+.sound-bar:nth-child(8) { animation-delay: 0.3s; }
+.sound-bar:nth-child(9) { animation-delay: 0.2s; }
+.sound-bar:nth-child(10) { animation-delay: 0.1s; }
+.sound-bar:nth-child(11) { animation-delay: 0.0s; }
+.sound-bar:nth-child(12) { animation-delay: 0.1s; }
+
+/* Brand text */
+.brand-title {
+  color: white;
+  font-weight: 800;
+  margin-top: 80px;
+  text-shadow: 0 4px 20px rgba(0, 0, 0, 0.3);
+  letter-spacing: 2px;
+  z-index: 10;
+}
+
+.brand-subtitle {
+  color: rgba(255, 255, 255, 0.8);
+  margin-top: 8px;
+  font-size: 1.1rem;
+  letter-spacing: 1px;
+  z-index: 10;
+}
+
+/* Floating music notes */
+.music-notes {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  overflow: hidden;
+}
+
+.note {
+  position: absolute;
+  font-size: 2rem;
+  color: rgba(255, 255, 255, 0.3);
+  animation: float-note 8s infinite ease-in-out;
+}
+
+.note-1 { top: 15%; left: 10%; animation-delay: 0s; font-size: 1.5rem; }
+.note-2 { top: 25%; right: 15%; animation-delay: 1s; font-size: 2.5rem; }
+.note-3 { bottom: 30%; left: 15%; animation-delay: 2s; font-size: 2rem; }
+.note-4 { bottom: 20%; right: 10%; animation-delay: 3s; font-size: 1.8rem; }
+.note-5 { top: 60%; left: 8%; animation-delay: 4s; font-size: 2.2rem; }
+
+@keyframes float-note {
+  0%, 100% {
+    transform: translateY(0) rotate(0deg);
+    opacity: 0.3;
+  }
+  25% {
+    transform: translateY(-20px) rotate(10deg);
+    opacity: 0.5;
+  }
+  50% {
+    transform: translateY(-10px) rotate(-5deg);
+    opacity: 0.4;
+  }
+  75% {
+    transform: translateY(-30px) rotate(15deg);
+    opacity: 0.6;
+  }
+}
+
+/* Responsive */
+@media (max-width: 1024px) {
+  .logo-section {
+    display: none;
+  }
+}
